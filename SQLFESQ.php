@@ -37,6 +37,8 @@ class SQLFESQ
             $this->error = $this->db->connect_error;
             return false;
         }
+        $this->query("SET character_set_results=utf8;");
+        $this->query("SET names 'utf8';");
         return true;
     }
 
