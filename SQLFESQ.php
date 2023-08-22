@@ -3,7 +3,12 @@
 /**
  * Author: Möf Selvi
  * SQLFESQ: SQL with Fast, Easy and Safe Queries
- * Licensed under MIT License.
+ * Licensed under MIT.
+ * 
+ * @package     SQLFESQ
+ * @author      Möf Selvi (@mofthedev)
+ * @copyright   Möf Selvi
+ * @license     http://opensource.org/licenses/MIT MIT License
  */
 class SQLFESQ
 {
@@ -30,16 +35,24 @@ class SQLFESQ
             return false;
         }
         /** Only MySQLi is supported for now. If other SQL drivers do not cause any trouble, they can also be added to this class in the future. */
-        $this->db = new mysqli($hostname, $username, $password, $database);
-        if ($this->db->connect_errno)
+        try
         {
-            $this->errno = $this->db->connect_errno;
-            $this->error = $this->db->connect_error;
+            $this->db = new mysqli($hostname, $username, $password, $database);
+            if ($this->db->connect_errno)
+            {
+                $this->errno = $this->db->connect_errno;
+                $this->error = $this->db->connect_error;
+                return false;
+            }
+            // $this->query("SET character_set_results=utf8;");
+            $this->query("SET NAMES 'utf8mb4';");
+            return true;
+        }
+        catch(Exception $e)
+        {
+            $this->error .= " ## ".$e;
             return false;
         }
-        $this->query("SET character_set_results=utf8;");
-        $this->query("SET names 'utf8';");
-        return true;
     }
 
     function handle_error()
@@ -81,7 +94,7 @@ class SQLFESQ
         $values_len = count($values);
         $bind_types = str_repeat('s', $values_len);
         // $bind_types = implode('', array_fill(0, $values_len, 's'));
-
+        // echo "\n\n".$query."\n\n";
         $this->stmt = $this->db->prepare($query);
         if($values_len > 0)
         {
