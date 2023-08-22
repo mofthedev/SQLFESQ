@@ -7,7 +7,7 @@
  * 
  * @package     SQLFESQ
  * @author      Möf Selvi (@mofthedev)
- * @copyright   Möf Selvi
+ * @copyright   Möf Selvi (Muhammed Ömer Faruk Selvi, mofselvi)
  * @license     http://opensource.org/licenses/MIT MIT License
  */
 class SQLFESQ
