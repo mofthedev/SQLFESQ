@@ -5,11 +5,14 @@
  * SQLFESQ: SQL with Fast, Easy and Safe Queries
  * Licensed under MIT.
  * 
- * @package     SQLFESQ
+ * @package     MofSelvi\SQLFESQ
  * @author      Möf Selvi (@mofthedev)
  * @copyright   Möf Selvi (Muhammed Ömer Faruk Selvi, mofselvi)
  * @license     http://opensource.org/licenses/MIT MIT License
  */
+
+namespace MofSelvi\SQLFESQ;
+
 class SQLFESQ
 {
     /** All SQL variables are public, so anything that is a part of the SQL engine is accessable. */
@@ -37,7 +40,7 @@ class SQLFESQ
         /** Only MySQLi is supported for now. If other SQL drivers do not cause any trouble, they can also be added to this class in the future. */
         try
         {
-            $this->db = new mysqli($hostname, $username, $password, $database);
+            $this->db = new \mysqli($hostname, $username, $password, $database);
             if ($this->db->connect_errno)
             {
                 $this->errno = $this->db->connect_errno;
@@ -49,6 +52,11 @@ class SQLFESQ
             return true;
         }
         catch(Exception $e)
+        {
+            $this->error .= " ## ".$e;
+            return false;
+        }
+        catch (\mysqli_sql_exception $e)
         {
             $this->error .= " ## ".$e;
             return false;
