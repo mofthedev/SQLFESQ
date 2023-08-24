@@ -20,14 +20,26 @@ class SQLFESQ
     public $errno = 0;
     public $error = '';
     public $stmt;
-    public $insert_id;
-    public $num_of_rows;
-    public $affected_rows;
+    public $insertID;
+    public $numOfRows;
+    public $affectedRows;
 
-    public $last_query;
-    public $last_values;
+    public $lastQuery;
+    public $lastValues;
 
-    public $fetch_type = MYSQLI_ASSOC; //MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+    public $fetchType = MYSQLI_ASSOC; //MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+
+    /**
+     * First instantiated object of this class.
+     * 
+     * @var SQLFESQ
+     */
+    private static $instance;
+
+    /**
+     * Last instantiated object of this class.
+     */
+    private static $lastInstance;
  
     public function __construct($hostname=NULL, $username=NULL, $password=NULL, $database=NULL)
     {
@@ -35,7 +47,7 @@ class SQLFESQ
         {
             $this->errno = 1;
             $this->error = "No connection. This object still can be used for test purposes.";
-            return false;
+            // return false;
         }
         /** Only MySQLi is supported for now. If other SQL drivers do not cause any trouble, they can also be added to this class in the future. */
         try
@@ -45,25 +57,40 @@ class SQLFESQ
             {
                 $this->errno = $this->db->connect_errno;
                 $this->error = $this->db->connect_error;
-                return false;
+                // return false;
+            }
+            else
+            {
+                self::$instance = self::$instance ?? $this;
+                self::$lastInstance = $this;
             }
             // $this->query("SET character_set_results=utf8;");
             $this->query("SET NAMES 'utf8mb4';");
-            return true;
-        }
-        catch(Exception $e)
-        {
-            $this->error .= " ## ".$e;
-            return false;
+            // return true;
         }
         catch (\mysqli_sql_exception $e)
         {
             $this->error .= " ## ".$e;
-            return false;
+            // return false;
+        }
+        catch(\Exception $e)
+        {
+            $this->error .= " ## ".$e;
+            // return false;
         }
     }
 
-    function handle_error()
+    public static function getInstance()
+    {
+        return self::$instance;
+    }
+
+    public static function getLastInstance()
+    {
+        return self::$lastInstance;
+    }
+
+    function handleError()
     {
         if ($this->db->errno)
         {
@@ -90,13 +117,13 @@ class SQLFESQ
 
     public function query(...$q)
     {
-        $qv = $this->process_query(...$q);
+        $qv = $this->processQuery(...$q);
         // print_r($qv);
         $query = $qv['query'];
         $values = $qv['values'];
 
-        $this->last_query = $query;
-        $this->last_values = $values;
+        $this->lastQuery = $query;
+        $this->lastValues = $values;
 
 
         $values_len = count($values);
@@ -111,27 +138,27 @@ class SQLFESQ
         $this->stmt->execute();
 
 
-        $this->affected_rows = $this->db->affected_rows;
+        $this->affectedRows = $this->db->affected_rows;
 
 
         $rows = [];
-        $this->num_of_rows = 0;
+        $this->numOfRows = 0;
 
         $result = $this->stmt->get_result();
         if($result)
         {
-            $this->num_of_rows = $result->num_rows;
-            $rows = $result->fetch_all($this->fetch_type);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+            $this->numOfRows = $result->num_rows;
+            $rows = $result->fetch_all($this->fetchType);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
         }
 
-        $this->insert_id = $this->db->insert_id;
+        $this->insertID = $this->db->insert_id;
 
-        $this->handle_error();
+        $this->handleError();
 
         return $rows;
     }
     
-    public function array_has_no_keys(array $arr)
+    public function arrayHasNoKeys(array $arr)
     {
         if (!function_exists('array_is_list'))
         {
@@ -147,7 +174,7 @@ class SQLFESQ
     }
 
 
-    public function process_query(...$params)
+    public function processQuery(...$params)
     {
         $query = '';
         $values = array();
@@ -159,7 +186,7 @@ class SQLFESQ
             {
                 $query .= $param . ' ';
             }
-            elseif(is_array($param) && $this->array_has_no_keys($param))
+            elseif(is_array($param) && $this->arrayHasNoKeys($param))
             {
                 $param_len = count($param);
                 if($param_len > 0)
@@ -175,7 +202,7 @@ class SQLFESQ
             }
             elseif (is_array($param))
             {
-                $nestedQuery = $this->process_nested_logic($param);
+                $nestedQuery = $this->processNestedLogic($param);
                 $query .= $nestedQuery['query'] . ' ';
                 $values = array_merge($values, $nestedQuery['values']);
             }
@@ -191,7 +218,7 @@ class SQLFESQ
         return array('query' => $query, 'values' => $values);
     }
 
-    public function process_nested_logic($arr, $op=',')
+    public function processNestedLogic($arr, $op=',')
     {
         $query = '';
         $values = array();
@@ -203,7 +230,7 @@ class SQLFESQ
         {
             if (is_array($prm_val))
             {
-                $nestedQuery = $this->process_nested_logic($prm_val, $prm_key);
+                $nestedQuery = $this->processNestedLogic($prm_val, $prm_key);
                 if ($len!==1){$query .= '(';}
                 $query .= $nestedQuery['query'];
                 if ($len!==1){$query .= ')';}
