@@ -17,6 +17,7 @@ class SQLFESQ
 {
     /** All SQL variables are public, so anything that is a part of the SQL engine is accessable. */
     public $db;
+    public $db_type;
     public $errno = 0;
     public $error = '';
     public $stmt;
@@ -38,18 +39,45 @@ class SQLFESQ
 
     /**
      * Last instantiated object of this class.
+     * 
+     * @var SQLFESQ
      */
     private static $lastInstance;
+
+    public function __construct($connection=NULL)
+    {
+        $this->db = $connection;
+
+        // @Attention: For each DB type
+        // Define types. DB type better be the pure name of the DB used. Not Mysqli, not Sqlite3, no uppercases.
+        if($connection instanceof \mysqli)
+        {
+            $this->db_type = "mysql";
+            $this->fetchType = MYSQLI_ASSOC;
+        }
+        elseif($connection instanceof \SQLite3)
+        {
+            $this->db_type = "sqlite";
+            $this->fetchType = SQLITE3_ASSOC;
+        }
+        else
+        {
+            $this->errno = 3;
+            $this->error = "This DB type is not supported yet. Please, consider contributing to the library.";
+            $this->db_type = "unknown";
+            $this->db = NULL;
+        }
+    }
  
-    public function __construct($hostname=NULL, $username=NULL, $password=NULL, $database=NULL)
+    public function connectMysql($hostname=NULL, $username=NULL, $password=NULL, $database=NULL)
     {
         if(is_null($hostname ?? $username ?? $password ?? $database))
         {
             $this->errno = 1;
             $this->error = "No connection. This object still can be used for test purposes.";
-            // return false;
+            return false;
         }
-        /** Only MySQLi is supported for now. If other SQL drivers do not cause any trouble, they can also be added to this class in the future. */
+        
         try
         {
             $this->db = new \mysqli($hostname, $username, $password, $database);
@@ -57,7 +85,7 @@ class SQLFESQ
             {
                 $this->errno = $this->db->connect_errno;
                 $this->error = $this->db->connect_error;
-                // return false;
+                return false;
             }
             else
             {
@@ -66,17 +94,55 @@ class SQLFESQ
             }
             // $this->query("SET character_set_results=utf8;");
             $this->query("SET NAMES 'utf8mb4';");
-            // return true;
+
+            $this->db_type = "mysql";
+            $this->fetchType = MYSQLI_ASSOC;
+            return true;
         }
         catch (\mysqli_sql_exception $e)
         {
             $this->error .= " ## ".$e;
-            // return false;
+            return false;
         }
         catch(\Exception $e)
         {
             $this->error .= " ## ".$e;
-            // return false;
+            return false;
+        }
+    }
+
+    public function connectSqlite($dbfilepath)
+    {
+        if(is_null($dbfilepath))
+        {
+            $this->errno = 1;
+            $this->error = "No connection. This object still can be used for test purposes.";
+            return false;
+        }
+        
+        try
+        {
+            $this->db = new \SQLite3($dbfilepath);
+            if ($this->db->lastErrorCode())
+            {
+                $this->errno = $this->db->lastErrorCode();
+                $this->error = $this->db->lastErrorMsg();
+                return false;
+            }
+            else
+            {
+                self::$instance = self::$instance ?? $this;
+                self::$lastInstance = $this;
+            }
+            
+            $this->db_type = "sqlite";
+            $this->fetchType = SQLITE3_ASSOC;
+            return true;
+        }
+        catch(\Exception $e)
+        {
+            $this->error .= " ## ".$e;
+            return false;
         }
     }
 
@@ -92,10 +158,17 @@ class SQLFESQ
 
     function handleError()
     {
-        if ($this->db->errno)
+        // @Attention: For each DB type
+        // Get the error number and error message, if any.
+        if ($this->db_type=='mysql' && property_exists($this->db,'errno'))
         {
             $this->errno = $this->db->errno;
             $this->error = $this->db->error;
+        }
+        elseif ($this->db_type=='sqlite' && method_exists($this->db,'lastErrorCode'))
+        {
+            $this->errno = $this->db->lastErrorCode();
+            $this->error = $this->db->lastErrorMsg();
         }
         else
         {
@@ -125,33 +198,80 @@ class SQLFESQ
         $this->lastQuery = $query;
         $this->lastValues = $values;
 
-
         $values_len = count($values);
-        $bind_types = str_repeat('s', $values_len);
-        // $bind_types = implode('', array_fill(0, $values_len, 's'));
-        // echo "\n\n".$query."\n\n";
+
+
+
         $this->stmt = $this->db->prepare($query);
         if($values_len > 0)
         {
-            $this->stmt->bind_param($bind_types, ...$values);
+            if($this->db_type=='mysql')
+            {
+                $bind_types = str_repeat('s', $values_len);
+                $this->stmt->bind_param($bind_types, ...$values);
+            }
+            elseif($this->db_type=='sqlite')
+            {
+                foreach ($values as $idx => $val)
+                {
+                    $this->stmt->bindValue($idx+1, $val, SQLITE3_TEXT);
+                }
+            }
         }
-        $this->stmt->execute();
+        
+        $execute_result = $this->stmt->execute();
+
+        if($this->db_type=='sqlite')
+        {
+            $this->stmt->reset();
+        }
 
 
-        $this->affectedRows = $this->db->affected_rows;
+        // @Attention: For each DB type
+        // Get number of affected rows
+        if($this->db_type=='mysql')
+        {
+            $this->affectedRows = $this->db->affected_rows;
+        }
+        elseif($this->db_type=='sqlite')
+        {
+            $this->affectedRows = $this->db->changes();
+        }
 
 
         $rows = [];
         $this->numOfRows = 0;
 
-        $result = $this->stmt->get_result();
-        if($result)
+        if($this->db_type=='mysql')
         {
-            $this->numOfRows = $result->num_rows;
-            $rows = $result->fetch_all($this->fetchType);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+            $result = $this->stmt->get_result();
+            if($result)
+            {
+                $this->numOfRows = $result->num_rows;
+                $rows = $result->fetch_all($this->fetchType);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+            }
+        }
+        elseif($this->db_type=='sqlite')
+        {
+            while ($row = $execute_result->fetchArray($this->fetchType))
+            {
+                $rows[] = $row;
+            }
+            $this->numOfRows = count($rows);
         }
 
-        $this->insertID = $this->db->insert_id;
+
+        // @Attention: For each DB type
+        // Get last insert ID
+        if($this->db_type=='mysql')
+        {
+            $this->insertID = $this->db->insert_id;
+        }
+        elseif($this->db_type=='sqlite')
+        {
+            $this->insertID = $this->db->lastInsertRowID();
+        }
+        
 
         $this->handleError();
 
