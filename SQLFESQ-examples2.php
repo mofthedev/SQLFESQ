@@ -4,8 +4,17 @@ use MofSelvi\SQLFESQ\SQLFESQ;
 
 require dirname(__FILE__)."/SQLFESQ.php";
 
-$db = new SQLFESQ("localhost", "root", "", "appuidb");
+// Give the connection
+$db = new SQLFESQ(new mysqli("localhost", "root", "", "appuidb"));
 
+// Or connect through the instance
+$db = new SQLFESQ();
+$db->connectMysql("localhost", "root", "", "appuidb");
+
+// Or open a db file
+$db->connectSqlite("litedb.db");
+
+// All DB types will support errno and error variables
 echo $db->errno.": ".$db->error."\n<br>\n";
 
 
