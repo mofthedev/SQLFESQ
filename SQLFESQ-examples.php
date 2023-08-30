@@ -95,6 +95,19 @@ echo "\n<br>\n";
     )
 */
 
+// To use BETWEEN, do not use string indices (associative arrays), use numeric arrays instead.
+print_r( $db->processQuery( "UPDATE table1 SET",["name ="=>"mof", "lastname ="=>"selvi"], "WHERE score BETWEEN", ["AND"=>[3, 5]] ) );
+echo "\n<br>\n";
+/*
+[query] => UPDATE table1 SET name = ? , lastname = ? WHERE score BETWEEN ? AND ?;
+[values] => Array
+    (
+        [0] => mof
+        [1] => selvi
+        [2] => 3
+        [3] => 5
+    )
+*/
 
 // For increment/decrement operations using user inputs, you can pass a 1-element array to the function.
 // Because "score=score+ (15)" is a valid syntax, it will work.
