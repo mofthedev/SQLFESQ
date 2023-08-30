@@ -362,7 +362,15 @@ class SQLFESQ
             }
             else
             {
-                $query .= $prm_key." ?";
+                if(is_int($prm_key))
+                {
+                    $query .= " ?";
+                }
+                else
+                {
+                    $query .= $prm_key." ?";
+                }
+                
                 if ($i!==($len-1))
                 {
                     $query .= " ".$op." ";
