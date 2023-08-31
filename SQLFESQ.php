@@ -15,6 +15,12 @@ namespace MofSelvi\SQLFESQ;
 
 class SQLFESQ
 {
+    /** Constants for DB types. Faster, safer, and easier than string comparisons. */
+    const TYPE_UNKNOWN = 0;
+    const TYPE_MYSQL = 1;
+    const TYPE_SQLITE = 2;
+
+
     /** All SQL variables are public, so anything that is a part of the SQL engine is accessable. */
     public $db;
     public $db_type;
@@ -22,12 +28,10 @@ class SQLFESQ
     public $error = '';
     public $stmt;
     public $insertID;
-    public $numOfRows;
-    public $affectedRows;
-
-    public $lastQuery;
-    public $lastValues;
-
+    public $numOfRows=0;
+    public $affectedRows=0;
+    public $lastQuery="";
+    public $lastValues=[];
     public $fetchType = MYSQLI_ASSOC; //MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
 
     /**
@@ -44,27 +48,31 @@ class SQLFESQ
      */
     private static $lastInstance;
 
+
     public function __construct($connection=NULL)
     {
+        if(is_null($connection))
+        {
+            return;
+        }
         $this->db = $connection;
 
         // @Attention: For each DB type
-        // Define types. DB type better be the pure name of the DB used. Not Mysqli, not Sqlite3, no uppercases.
         if($connection instanceof \mysqli)
         {
-            $this->db_type = "mysql";
+            $this->db_type = static::TYPE_MYSQL;
             $this->fetchType = MYSQLI_ASSOC;
         }
         elseif($connection instanceof \SQLite3)
         {
-            $this->db_type = "sqlite";
+            $this->db_type = static::TYPE_SQLITE;
             $this->fetchType = SQLITE3_ASSOC;
         }
         else
         {
             $this->errno = 3;
             $this->error = "This DB type is not supported yet. Please, consider contributing to the library.";
-            $this->db_type = "unknown";
+            $this->db_type = static::TYPE_UNKNOWN;
             $this->db = NULL;
         }
     }
@@ -95,17 +103,19 @@ class SQLFESQ
             // $this->query("SET character_set_results=utf8;");
             $this->query("SET NAMES 'utf8mb4';");
 
-            $this->db_type = "mysql";
+            $this->db_type = static::TYPE_MYSQL;
             $this->fetchType = MYSQLI_ASSOC;
             return true;
         }
         catch (\mysqli_sql_exception $e)
         {
+            $this->errno = $this->errno!==0 ? $this->errno : 1;
             $this->error .= " ## ".$e;
             return false;
         }
         catch(\Exception $e)
         {
+            $this->errno = $this->errno!==0 ? $this->errno : 1;
             $this->error .= " ## ".$e;
             return false;
         }
@@ -134,13 +144,15 @@ class SQLFESQ
                 self::$instance = self::$instance ?? $this;
                 self::$lastInstance = $this;
             }
+            $this->db->busyTimeout(60000);//60000
             
-            $this->db_type = "sqlite";
+            $this->db_type = static::TYPE_SQLITE;
             $this->fetchType = SQLITE3_ASSOC;
             return true;
         }
         catch(\Exception $e)
         {
+            $this->errno = $this->errno!==0 ? $this->errno : 1;
             $this->error .= " ## ".$e;
             return false;
         }
@@ -160,12 +172,12 @@ class SQLFESQ
     {
         // @Attention: For each DB type
         // Get the error number and error message, if any.
-        if ($this->db_type=='mysql' && property_exists($this->db,'errno'))
+        if ($this->db_type===static::TYPE_MYSQL && property_exists($this->db,'errno'))
         {
             $this->errno = $this->db->errno;
             $this->error = $this->db->error;
         }
-        elseif ($this->db_type=='sqlite' && method_exists($this->db,'lastErrorCode'))
+        elseif ($this->db_type===static::TYPE_SQLITE && method_exists($this->db,'lastErrorCode'))
         {
             $this->errno = $this->db->lastErrorCode();
             $this->error = $this->db->lastErrorMsg();
@@ -200,82 +212,124 @@ class SQLFESQ
 
         $values_len = count($values);
 
-
-
-        $this->stmt = $this->db->prepare($query);
-        if($values_len > 0)
+        try
         {
-            if($this->db_type=='mysql')
+            $this->stmt = $this->db->prepare($query);
+            if($values_len > 0)
             {
-                $bind_types = str_repeat('s', $values_len);
-                $this->stmt->bind_param($bind_types, ...$values);
-            }
-            elseif($this->db_type=='sqlite')
-            {
-                foreach ($values as $idx => $val)
+                // @Attention: For each DB type
+                if($this->db_type===static::TYPE_MYSQL)
                 {
-                    $this->stmt->bindValue($idx+1, $val, SQLITE3_TEXT);
+                    $bind_types = str_repeat('s', $values_len);
+                    $this->stmt->bind_param($bind_types, ...$values);
+                }
+                elseif($this->db_type===static::TYPE_SQLITE)
+                {
+                    foreach ($values as $idx => $val)
+                    {
+                        $this->stmt->bindValue($idx+1, $val, SQLITE3_TEXT);
+                    }
                 }
             }
-        }
-        
-        $execute_result = $this->stmt->execute();
-
-        if($this->db_type=='sqlite')
-        {
-            $this->stmt->reset();
-        }
+            
+            $execute_result = $this->stmt->execute();
 
 
-        // @Attention: For each DB type
-        // Get number of affected rows
-        if($this->db_type=='mysql')
-        {
-            $this->affectedRows = $this->db->affected_rows;
-        }
-        elseif($this->db_type=='sqlite')
-        {
-            $this->affectedRows = $this->db->changes();
-        }
-
-
-        $rows = [];
-        $this->numOfRows = 0;
-
-        if($this->db_type=='mysql')
-        {
-            $result = $this->stmt->get_result();
-            if($result)
+            if($this->db_type===static::TYPE_SQLITE)
             {
-                $this->numOfRows = $result->num_rows;
-                $rows = $result->fetch_all($this->fetchType);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+                $this->stmt->reset();
+            }
+
+
+            // @Attention: For each DB type
+            // Get number of affected rows
+            if($this->db_type===static::TYPE_MYSQL)
+            {
+                $this->affectedRows = $this->db->affected_rows;
+            }
+            elseif($this->db_type===static::TYPE_SQLITE)
+            {
+                $this->affectedRows = $this->db->changes();
+            }
+
+
+            $rows = [];
+            $this->numOfRows = 0;
+
+            // There is a known bug in Sqlite.
+            // After using a prepared statement, calling fetchArray() method will execute the query again.
+            // This will fix it.
+            $query_uc = strtoupper($query);
+            if(strpos($query_uc, "SELECT") !== false && strpos($query_uc, "INSERT INTO") === false)
+            {
+                if($this->db_type===static::TYPE_MYSQL)
+                {
+                    $result = $this->stmt->get_result();
+                    if($result)
+                    {
+                        $this->numOfRows = $result->num_rows;
+                        $rows = $result->fetch_all($this->fetchType);//MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+                    }
+                }
+                elseif($this->db_type===static::TYPE_SQLITE)
+                {
+                    while ($row = $execute_result->fetchArray($this->fetchType))
+                    {
+                        $rows[] = $row;
+                    }
+                    $this->numOfRows = count($rows);
+                }
+            }
+
+
+            // @Attention: For each DB type
+            // Get last insert ID
+            if($this->db_type===static::TYPE_MYSQL)
+            {
+                $this->insertID = $this->db->insert_id;
+            }
+            elseif($this->db_type===static::TYPE_SQLITE)
+            {
+                $this->insertID = $this->db->lastInsertRowID();
+            }
+            
+
+            $this->handleError();
+
+            return $rows;
+        }
+        catch(\Exception $e)
+        {
+            $this->errno = $this->errno!==0 ? $this->errno : 4;
+            $this->error .= " ## query() error: ".$e;
+            return false;
+        }
+    }
+
+    /**
+     * Caution: This method doesn't provide security at all.
+     * Use this for queries without user inputs!
+     */
+    public function multiQuery($query)
+    {
+        try
+        {
+            // @Attention: For each DB type
+            if($this->db_type===static::TYPE_MYSQL)
+            {
+                return $this->db->multi_query($query);
+            }
+            elseif($this->db_type===static::TYPE_SQLITE)
+            {
+                return $this->db->exec($query);
             }
         }
-        elseif($this->db_type=='sqlite')
+        catch(\Exception $e)
         {
-            while ($row = $execute_result->fetchArray($this->fetchType))
-            {
-                $rows[] = $row;
-            }
-            $this->numOfRows = count($rows);
+            $this->errno = $this->errno!==0 ? $this->errno : 5;
+            $this->error .= " ## multiQuery() error: ".$e;
+            return false;
         }
-
-
-        // @Attention: For each DB type
-        // Get last insert ID
-        if($this->db_type=='mysql')
-        {
-            $this->insertID = $this->db->insert_id;
-        }
-        elseif($this->db_type=='sqlite')
-        {
-            $this->insertID = $this->db->lastInsertRowID();
-        }
-        
-
-        $this->handleError();
-
-        return $rows;
     }
     
     public function arrayHasNoKeys(array $arr)
