@@ -33,6 +33,7 @@ class SQLFESQ
     public $lastQuery="";
     public $lastValues=[];
     public $fetchType = MYSQLI_ASSOC; //MYSQLI_ASSOC,MYSQLI_NUM,MYSQLI_BOTH
+    public $transactionStarted = false;
 
     /**
      * First instantiated object of this class.
@@ -200,6 +201,73 @@ class SQLFESQ
         return false;
     }
 
+    /**
+     * Starts a transaction, if not done before. Then processes the query.
+     * To apply all queries in the queue, use flush().
+     * @param array $q
+     * @return mixed
+     */
+    public function queue(...$q)
+    {
+        $starting_transaction = false;
+
+        // Start a transaction if not done before
+        if($this->transactionStarted === false)
+        {
+            $this->transactionStarted = true;
+
+            // @Attention: For each DB type
+            if($this->db_type===static::TYPE_MYSQL)
+            {
+                $starting_transaction = $this->db->query("START TRANSACTION;");
+            }
+            elseif($this->db_type===static::TYPE_SQLITE)
+            {
+                $starting_transaction = $this->db->exec("BEGIN;");
+            }
+
+            if(!$starting_transaction)
+            {
+                return false;
+            }
+        }
+
+        return $this->query(...$q);
+    }
+
+    /**
+     * Commits the transaction and applies all changes in the queue.
+     * Transaction ends here.
+     * @return \SQLite3Result|\mysqli_result|bool
+     */
+    public function flush()
+    {
+        $ending_transaction = false;
+
+        if($this->transactionStarted === true)
+        {
+            $this->transactionStarted = false;
+
+            // @Attention: For each DB type
+            if($this->db_type===static::TYPE_MYSQL)
+            {
+                $ending_transaction = $this->db->query("COMMIT;");
+            }
+            elseif($this->db_type===static::TYPE_SQLITE)
+            {
+                $ending_transaction = $this->db->exec("COMMIT;");
+            }
+        }
+
+        return $ending_transaction;
+    }
+
+    /**
+     * Processes a query and sends it to the DB.
+     * Can be used for simple string queries and prepared queries. See the examples.
+     * @param array $q
+     * @return mixed
+     */
     public function query(...$q)
     {
         $qv = $this->processQuery(...$q);
@@ -214,32 +282,57 @@ class SQLFESQ
 
         try
         {
+            // $this->db->autocommit(false);
+
             $this->stmt = $this->db->prepare($query);
+
+            if(!$this->stmt)
+            {
+                $this->handleError();
+                return false;
+            }
+
             if($values_len > 0)
             {
                 // @Attention: For each DB type
                 if($this->db_type===static::TYPE_MYSQL)
                 {
                     $bind_types = str_repeat('s', $values_len);
-                    $this->stmt->bind_param($bind_types, ...$values);
+                    $binding_params = $this->stmt->bind_param($bind_types, ...$values);
+                    
+                    if(!$binding_params)
+                    {
+                        $this->handleError();
+                        return false;
+                    }
                 }
                 elseif($this->db_type===static::TYPE_SQLITE)
                 {
                     foreach ($values as $idx => $val)
                     {
-                        $this->stmt->bindValue($idx+1, $val, SQLITE3_TEXT);
+                        $binding_params = $this->stmt->bindValue($idx+1, $val, SQLITE3_TEXT);
+
+                        if(!$binding_params)
+                        {
+                            $this->handleError();
+                            return false;
+                        }
                     }
                 }
             }
             
             $execute_result = $this->stmt->execute();
 
-
             if($this->db_type===static::TYPE_SQLITE)
             {
                 $this->stmt->reset();
             }
 
+            if(!$execute_result)
+            {
+                $this->handleError();
+                return false;
+            }
 
             // @Attention: For each DB type
             // Get number of affected rows
@@ -332,7 +425,13 @@ class SQLFESQ
         }
     }
     
-    public function arrayHasNoKeys(array $arr)
+
+    /**
+     * Used while processing a query.
+     * @param array $arr
+     * @return bool
+     */
+    protected function arrayHasNoKeys(array $arr)
     {
         if (!function_exists('array_is_list'))
         {
@@ -348,6 +447,12 @@ class SQLFESQ
     }
 
 
+    /**
+     * Processes a query string but doesn't send the query to the DB.
+     * Can be used for debug purposes. No need for an initialized DB connection.
+     * @param array $params
+     * @return array
+     */
     public function processQuery(...$params)
     {
         $query = '';
@@ -392,7 +497,13 @@ class SQLFESQ
         return array('query' => $query, 'values' => $values);
     }
 
-    public function processNestedLogic($arr, $op=',')
+    /**
+     * Used by processQuery() to process nested logic arrays.
+     * @param mixed $arr
+     * @param mixed $op
+     * @return array
+     */
+    protected function processNestedLogic($arr, $op=',')
     {
         $query = '';
         $values = array();
