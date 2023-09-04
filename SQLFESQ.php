@@ -169,8 +169,25 @@ class SQLFESQ
         return self::$lastInstance;
     }
 
+    function checkConnection()
+    {
+        if(is_null($this->db))
+        {
+            $this->errno = 1;
+            $this->error = "No connection.";
+            return false;
+        }
+        return true;
+    }
+
     function handleError()
     {
+        if(is_null($this->db))
+        {
+            $this->checkConnection();
+            return false;
+        }
+
         // @Attention: For each DB type
         // Get the error number and error message, if any.
         if ($this->db_type===static::TYPE_MYSQL && property_exists($this->db,'errno'))
@@ -209,6 +226,12 @@ class SQLFESQ
      */
     public function queue(...$q)
     {
+        if(is_null($this->db))
+        {
+            $this->checkConnection();
+            return false;
+        }
+
         $starting_transaction = false;
 
         // Start a transaction if not done before
@@ -242,6 +265,12 @@ class SQLFESQ
      */
     public function flush()
     {
+        if(is_null($this->db))
+        {
+            $this->checkConnection();
+            return false;
+        }
+
         $ending_transaction = false;
 
         if($this->transactionStarted === true)
@@ -270,6 +299,12 @@ class SQLFESQ
      */
     public function query(...$q)
     {
+        if(is_null($this->db))
+        {
+            $this->checkConnection();
+            return false;
+        }
+
         $qv = $this->processQuery(...$q);
         // print_r($qv);
         $query = $qv['query'];
@@ -405,6 +440,12 @@ class SQLFESQ
      */
     public function multiQuery($query)
     {
+        if(is_null($this->db))
+        {
+            $this->checkConnection();
+            return false;
+        }
+        
         try
         {
             // @Attention: For each DB type
