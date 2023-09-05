@@ -38,14 +38,14 @@ class SQLFESQ
     /**
      * First instantiated object of this class.
      * 
-     * @var SQLFESQ
+     * @static SQLFESQ
      */
     private static $instance;
 
     /**
      * Last instantiated object of this class.
      * 
-     * @var SQLFESQ
+     * @static SQLFESQ
      */
     private static $lastInstance;
 
@@ -159,11 +159,23 @@ class SQLFESQ
         }
     }
 
+    /**
+     * Get the first instance.
+     * 
+     * @static
+     * @return SQLFESQ
+     */
     public static function getInstance()
     {
         return self::$instance;
     }
 
+    /**
+     * Get the last initialized instance.
+     * 
+     * @static
+     * @return SQLFESQ
+     */
     public static function getLastInstance()
     {
         return self::$lastInstance;
